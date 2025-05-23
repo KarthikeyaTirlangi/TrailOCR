@@ -2,126 +2,135 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Markdown Folder Viewer</title>
+    <title>Proofreading</title>
     <style>
-        .folder {
-            margin: 10px 0;
-        }
-        .folder-title {
-            cursor: pointer;
-            font-weight: bold;
-            background-color: #f0f0f0;
-            padding: 5px;
-            border-radius: 3px;
-        }
-        .file-list {
-            display: none;
-            margin-left: 20px;
-        }
-        .file-list.active {
-            display: block;
-        }
-        .markdown-content {
-            margin-top: 10px;
-        }
-        textarea {
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        ul { list-style-type: none; padding: 0; }
+        li { margin: 5px 0; }
+        a { color: #007bff; text-decoration: none; cursor: pointer; }
+        a:hover { text-decoration: underline; }
+        .folder-section { margin-bottom: 20px; }
+        .file-list { display: none; margin-left: 20px; }
+        pre, textarea {
             width: 100%;
-            height: 200px;
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid #ccc;
+            padding: 10px;
             font-family: monospace;
+            white-space: pre-wrap;
+            word-wrap: break-word;
         }
-        #request-changes {
-            margin-top: 10px;
-            padding: 5px 10px;
+        button[disabled] {
             background-color: #ccc;
-            border: none;
             cursor: not-allowed;
         }
-        #request-changes.active {
-            background-color: #28a745;
+        button {
+            margin-top: 10px;
+            padding: 8px 12px;
+            background-color: #007bff;
             color: white;
+            border: none;
             cursor: pointer;
+            border-radius: 4px;
         }
     </style>
 </head>
 <body>
-    <div class="folder">
-        <div class="folder-title">Folder 1</div>
-        <div class="file-list">
-            <div class="file" data-path="folder1/file1.md">file1.md</div>
-            <div class="file" data-path="folder1/file2.md">file2.md</div>
-        </div>
-    </div>
-    <div class="folder">
-        <div class="folder-title">Folder 2</div>
-        <div class="file-list">
-            <div class="file" data-path="folder2/file3.md">file3.md</div>
-        </div>
-    </div>
-    <div class="markdown-content" style="display: none;">
-        <h3>Editing: <span id="file-name"></span></h3>
-        <textarea id="markdown-editor"></textarea>
-        <button id="request-changes" disabled>Request Changes</button>
-    </div>
+    <h1>Proofreading Folders</h1>
+    <p>Select a folder to view its Markdown files. Click a file to see and edit its content. Once you edit, click "Request Changes" to go to GitHub.</p>
+    <div id="folder-list"></div>
+    <div id="file-content"></div>
 
     <script>
-        // Toggle file list visibility when folder title is clicked
-        document.querySelectorAll('.folder-title').forEach(title => {
-            title.addEventListener('click', () => {
-                const fileList = title.nextElementSibling;
-                fileList.classList.toggle('active');
-            });
-        });
+        const repoOwner = 'KarthikeyaTirlangi';  // Replace with your GitHub username
+        const repoName = 'TrailOCR';       // Replace with your repository name
+        const branch = 'main';
 
-        // Sample Markdown content (replace with actual content in a real scenario)
-        const markdownFiles = {
-            'folder1/file1.md': '# Sample File 1\nThis is a test.',
-            'folder1/file2.md': '# Sample File 2\nAnother test.',
-            'folder2/file3.md': '# Sample File 3\nYet another test.'
-        };
+        const folderList = document.getElementById('folder-list');
+        const fileContent = document.getElementById('file-content');
+        let currentFilePath = '';
+        let originalContent = '';
 
-        // Handle file clicks to show editable content
-        document.querySelectorAll('.file').forEach(file => {
-            file.addEventListener('click', () => {
-                const path = file.getAttribute('data-path');
-                const content = markdownFiles[path] || 'Content not found.';
-                const editor = document.getElementById('markdown-editor');
-                const fileName = document.getElementById('file-name');
-                const requestButton = document.getElementById('request-changes');
-                const markdownContent = document.querySelector('.markdown-content');
+        fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents?ref=${branch}`)
+            .then(response => response.json())
+            .then(data => {
+                data.forEach(item => {
+                    if (item.type === 'dir') {
+                        const section = document.createElement('div');
+                        section.className = 'folder-section';
 
-                // Show editor and set initial content
-                markdownContent.style.display = 'block';
-                fileName.textContent = path;
-                editor.value = content;
-                requestButton.disabled = true;
-                requestButton.classList.remove('active');
+                        const title = document.createElement('h2');
+                        title.textContent = item.name;
+                        title.style.cursor = 'pointer';
+                        title.onclick = () => {
+                            const list = document.getElementById(`${item.name}-files`);
+                            list.style.display = list.style.display === 'none' ? 'block' : 'none';
+                        };
 
-                // Track original content for comparison
-                const originalContent = content;
+                        const ul = document.createElement('ul');
+                        ul.id = `${item.name}-files`;
+                        ul.className = 'file-list';
 
-                // Enable "Request Changes" button when content changes
-                editor.addEventListener('input', () => {
-                    if (editor.value !== originalContent) {
-                        requestButton.disabled = false;
-                        requestButton.classList.add('active');
-                    } else {
-                        requestButton.disabled = true;
-                        requestButton.classList.remove('active');
+                        section.appendChild(title);
+                        section.appendChild(ul);
+                        folderList.appendChild(section);
+
+                        loadFiles(item.path, ul);
                     }
                 });
+            })
+            .catch(error => console.error('Error fetching folders:', error));
 
-                // Handle "Request Changes" click
-                requestButton.onclick = () => {
-                    if (!requestButton.disabled) {
-                        const githubEditUrl = `https://github.com/KarthikeyaTirlangi/TrailOCR/edit/main/${path}`;
-                        // In a real scenario, you could encode the updated content and suggest a PR,
-                        // but here we simply redirect to GitHub's edit page.
-                        window.open(githubEditUrl, '_blank');
-                    }
-                };
-            });
-        });
+        function loadFiles(folderPath, ul) {
+            fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${folderPath}?ref=${branch}`)
+                .then(response => response.json())
+                .then(data => {
+                    data.forEach(file => {
+                        if (file.type === 'file' && file.name.endsWith('.md')) {
+                            const li = document.createElement('li');
+                            const a = document.createElement('a');
+                            a.textContent = file.name;
+                            a.onclick = () => loadFile(file.path);
+                            li.appendChild(a);
+                            ul.appendChild(li);
+                        }
+                    });
+                })
+                .catch(error => console.error(`Error fetching files in ${folderPath}:`, error));
+        }
+
+        function loadFile(path) {
+            const rawUrl = `https://raw.githubusercontent.com/${repoOwner}/${repoName}/${branch}/${path}`;
+            fetch(rawUrl)
+                .then(response => response.text())
+                .then(text => {
+                    originalContent = text;
+                    currentFilePath = path;
+
+                    fileContent.innerHTML = `
+                        <h3>${path}</h3>
+                        <textarea id="editor" rows="20">${text}</textarea>
+                        <br>
+                        <button id="requestChangesBtn" disabled>Request Changes</button>
+                    `;
+
+                    const editor = document.getElementById('editor');
+                    const btn = document.getElementById('requestChangesBtn');
+
+                    editor.addEventListener('input', () => {
+                        btn.disabled = editor.value === originalContent;
+                    });
+
+                    btn.onclick = () => {
+                        const editUrl = `https://github.com/${repoOwner}/${repoName}/edit/${branch}/${currentFilePath}`;
+                        window.open(editUrl, '_blank');
+                    };
+                })
+                .catch(error => {
+                    fileContent.innerHTML = `<p>Error loading file: ${error.message}</p>`;
+                });
+        }
     </script>
 </body>
 </html>
