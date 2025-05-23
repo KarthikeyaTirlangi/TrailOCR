@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Proofreading</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        ul { list-style-type: none; padding: 0; }
+        li { margin: 10px 0; }
+        a { color: #007bff; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        .folder-section { margin-bottom: 20px; }
+        #file-content pre { max-height: 400px; overflow-y: auto; border: 1px solid #ccc; padding: 10px; }
+    </style>
+</head>
+<body>
+    <h1>Proofreading Folders</h1>
+    <p>Select a folder to view its Markdown files. Click a file to see its content, then use "Request Changes" to edit it on GitHub. You’ll need a GitHub account to submit changes.</p>
+    <div id="folder-list">
+        <!-- Folders and files will be listed here -->
+    </div>
+    <div id="file-content">
+        <!-- File content will be displayed here -->
+    </div>
+    <script>
+        const repoOwner = 'KarthikeyaTirlangi';  // Replace with your GitHub username
+        const repoName = 'TrailOCR';       // Replace with your repository name
+        const branch = 'main';              // Your branch name
+
+        // Fetch list of folders in root
+        fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents?ref=${branch}`)
+            .then(response => response.json())
+            .then(data => {
+                const folderList = document.getElementById('folder-list');
+                data.forEach(item => {
+                    if (item.type === 'dir') {
+                        const folderDiv = document.createElement('div');
+                        folderDiv.className = 'folder-section';
+                        folderDiv.innerHTML = `<h2>${item.name}</h2><ul id="${item.name}-files"></ul>`;
+                        folderList.appendChild(folderDiv);
+                        loadFiles(item.path, item.name);
+                    }
+                });
+            })
+            .catch(error => console.error('Error fetching folders:', error));
+
+        // Load .md files in a folder
+        function loadFiles(folderPath, folderName) {
+            fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${folderPath}?ref=${branch}`)
+                .then(response => response.json())
+                .then(data => {
+                    const fileList = document.getElementById(`${folderName}-files`);
+                    data.forEach(file => {
+                        if (file.type === 'file' && file.name.endsWith('.md')) {
+                            const li = document.createElement('li');
+                            const a = document.createElement('a');
+                            a.href = '#';
+                            a.textContent = file.name;
+                            a.onclick = () => loadFile(file.path);
+                            li.appendChild(a);
+                            fileList.appendChild(li);
+                        }
+                    });
+                })
+                .catch(error => console.error(`Error fetching files in ${folderPath}:`, error));
+        }
+
+        // Load file content
+        function loadFile(path) {
+            const rawUrl = `https://raw.githubusercontent.com/${repoOwner}/${repoName}/${branch}/${path}`;
+            fetch(rawUrl)
+                .then(response => response.text())
+                .then(text => {
+                    const contentDiv = document.getElementById('file-content');
+                    contentDiv.innerHTML = `
+                        <h3>${path}</h3>
+                        <pre>${text}</pre>
+                        <a href="https://github.com/${repoOwner}/${repoName}/edit/${branch}/${path}" target="_blank">Request Changes</a>
+                    `;
+                })
+                .catch(error => {
+                    contentDiv.innerHTML = `<p>Error loading file: ${error.message}</p>`;
+                });
+        }
+    </script>
+</body>
+</html>
