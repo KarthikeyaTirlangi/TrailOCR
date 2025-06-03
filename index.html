@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!-- <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -130,6 +130,168 @@
                 .catch(error => {
                     fileContent.innerHTML = `<p>Error loading file: ${error.message}</p>`;
                 });
+        }
+    </script>
+</body>
+</html>
+ -->
+
+
+ <!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Proofreading</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; display: flex; height: 100vh; }
+        #sidebar { width: 30%; overflow-y: auto; padding: 20px; border-right: 1px solid #ccc; box-sizing: border-box; }
+        #main-content { flex: 1; display: flex; flex-direction: column; padding: 20px; box-sizing: border-box; }
+        ul { list-style-type: none; padding: 0; }
+        li { margin: 5px 0; }
+        a { color: #007bff; text-decoration: none; cursor: pointer; }
+        a:hover { text-decoration: underline; }
+        .folder-section { margin-bottom: 20px; }
+        .file-list { display: none; margin-left: 20px; }
+        textarea {
+            width: 100%;
+            height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ccc;
+            padding: 10px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        button[disabled] {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        button {
+            margin-top: 10px;
+            padding: 8px 12px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        iframe {
+            flex: 1;
+            border: 1px solid #ccc;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div id="sidebar">
+        <h1>Proofreading Folders</h1>
+        <p>Select a folder to view its Markdown and PDF files. Click a file to see and edit content alongside the original PDF.</p>
+        <div id="folder-list"></div>
+    </div>
+    <div id="main-content">
+        <div id="file-content"></div>
+        <iframe id="pdf-viewer" width="100%" height="100%" style="display: none;"></iframe>
+    </div>
+
+    <script>
+        const repoOwner = 'KarthikeyaTirlangi';  // Your GitHub username
+        const repoName = 'TrailOCR';            // Your repository name
+        const branch = 'main';
+
+        const folderList = document.getElementById('folder-list');
+        const fileContent = document.getElementById('file-content');
+        const pdfViewer = document.getElementById('pdf-viewer');
+        let currentFilePath = '';
+        let originalContent = '';
+
+        fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents?ref=${branch}`)
+            .then(response => response.json())
+            .then(data => {
+                data.forEach(item => {
+                    if (item.type === 'dir') {
+                        const section = document.createElement('div');
+                        section.className = 'folder-section';
+
+                        const title = document.createElement('h2');
+                        title.textContent = item.name;
+                        title.style.cursor = 'pointer';
+                        title.onclick = () => {
+                            const list = document.getElementById(`${item.name}-files`);
+                            list.style.display = list.style.display === 'none' ? 'block' : 'none';
+                        };
+
+                        const ul = document.createElement('ul');
+                        ul.id = `${item.name}-files`;
+                        ul.className = 'file-list';
+
+                        section.appendChild(title);
+                        section.appendChild(ul);
+                        folderList.appendChild(section);
+
+                        loadFolderContent(item.path, ul);
+                    }
+                });
+            })
+            .catch(error => console.error('Error fetching folders:', error));
+
+        function loadFolderContent(folderPath, ul) {
+            fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${folderPath}?ref=${branch}`)
+                .then(response => response.json())
+                .then(data => {
+                    const mdFile = data.find(f => f.name.endsWith('.md'));
+                    const pdfFile = data.find(f => f.name.endsWith('.pdf'));
+
+                    if (mdFile && pdfFile) {
+                        const li = document.createElement('li');
+                        const a = document.createElement('a');
+                        a.textContent = mdFile.name + ' + ' + pdfFile.name;
+                        a.onclick = () => loadPair(folderPath, mdFile.name, pdfFile.name);
+                        li.appendChild(a);
+                        ul.appendChild(li);
+                    }
+                })
+                .catch(error => console.error(`Error loading folder content from ${folderPath}:`, error));
+        }
+
+        function loadPair(folderPath, mdFileName, pdfFileName) {
+            const mdPath = `${folderPath}/${mdFileName}`;
+            const pdfPath = `${folderPath}/${pdfFileName}`;
+            const rawMdUrl = `https://raw.githubusercontent.com/${repoOwner}/${repoName}/${branch}/${mdPath}`;
+            const pdfUrl = `https://raw.githubusercontent.com/${repoOwner}/${repoName}/${branch}/${pdfPath}`;
+
+            // Load markdown
+            fetch(rawMdUrl)
+                .then(response => response.text())
+                .then(text => {
+                    originalContent = text;
+                    currentFilePath = mdPath;
+
+                    fileContent.innerHTML = `
+                        <h3>${mdFileName}</h3>
+                        <textarea id="editor">${text}</textarea>
+                        <br>
+                        <button id="requestChangesBtn" disabled>Request Changes</button>
+                    `;
+
+                    const editor = document.getElementById('editor');
+                    const btn = document.getElementById('requestChangesBtn');
+
+                    editor.addEventListener('input', () => {
+                        btn.disabled = editor.value === originalContent;
+                    });
+
+                    btn.onclick = () => {
+                        const editUrl = `https://github.com/${repoOwner}/${repoName}/edit/${branch}/${currentFilePath}`;
+                        window.open(editUrl, '_blank');
+                    };
+                })
+                .catch(error => {
+                    fileContent.innerHTML = `<p>Error loading Markdown: ${error.message}</p>`;
+                });
+
+            // Load PDF
+            pdfViewer.src = pdfUrl;
+            pdfViewer.style.display = 'block';
         }
     </script>
 </body>
