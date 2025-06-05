@@ -261,6 +261,8 @@
 
         function loadMarkdownFile(path) {
             const rawUrl = `https://raw.githubusercontent.com/${repoOwner}/${repoName}/${branch}/${path}`;
+            const folderPath = path.substring(0, path.lastIndexOf('/'));
+
             fetch(rawUrl)
                 .then(response => response.text())
                 .then(text => {
@@ -272,6 +274,14 @@
                         <textarea id="editor" rows="20">${text}</textarea>
                         <br>
                         <button id="requestChangesBtn" disabled>Request Changes</button>
+                        <div id="pdf-viewer">
+                            <canvas id="pdf-canvas"></canvas>
+                            <div id="pdf-controls">
+                                <button id="prev-page" disabled>Previous</button>
+                                <span id="page-info">Page 1 of 1</span>
+                                <button id="next-page" disabled>Next</button>
+                            </div>
+                        </div>
                     `;
 
                     const editor = document.getElementById('editor');
@@ -285,6 +295,55 @@
                         const editUrl = `https://github.com/${repoOwner}/${repoName}/edit/${branch}/${currentFilePath}`;
                         window.open(editUrl, '_blank');
                     };
+
+                    // Find and load the single PDF in the folder
+                    fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${folderPath}?ref=${branch}`)
+                        .then(response => response.json())
+                        .then(data => {
+                            const pdfFile = data.find(file => file.type === 'file' && file.name.endsWith('.pdf'));
+                            if (pdfFile) {
+                                const pdfUrl = `https://raw.githubusercontent.com/${repoOwner}/${repoName}/${branch}/${pdfFile.path}`;
+                                const loadingTask = pdfjsLib.getDocument(pdfUrl);
+                                loadingTask.promise.then(pdf => {
+                                    pdfDoc = pdf;
+                                    totalPages = pdf.numPages;
+                                    currentPage = 1;
+
+                                    const pageInfo = document.getElementById('page-info');
+                                    pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
+
+                                    const prevBtn = document.getElementById('prev-page');
+                                    const nextBtn = document.getElementById('next-page');
+                                    prevBtn.disabled = currentPage === 1;
+                                    nextBtn.disabled = currentPage === totalPages;
+
+                                    prevBtn.onclick = () => {
+                                        if (currentPage > 1) {
+                                            currentPage--;
+                                            renderPDFPage();
+                                        }
+                                    };
+                                    nextBtn.onclick = () => {
+                                        if (currentPage < totalPages) {
+                                            currentPage++;
+                                            renderPDFPage();
+                                        }
+                                    };
+
+                                    renderPDFPage();
+                                }).catch(error => {
+                                    const pdfViewer = document.getElementById('pdf-viewer');
+                                    pdfViewer.innerHTML = `<p>Error loading PDF: ${error.message}</p>`;
+                                });
+                            } else {
+                                const pdfViewer = document.getElementById('pdf-viewer');
+                                pdfViewer.innerHTML = `<p>No PDF file found in the folder.</p>`;
+                            }
+                        })
+                        .catch(error => {
+                            const pdfViewer = document.getElementById('pdf-viewer');
+                            pdfViewer.innerHTML = `<p>Error fetching folder contents: ${error.message}</p>`;
+                        });
                 })
                 .catch(error => {
                     fileContent.innerHTML = `<p>Error loading file: ${error.message}</p>`;
