@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!-- <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -133,28 +133,25 @@
         }
     </script>
 </body>
-</html>
+</html> -->
 
-
-<!-- 
- <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <title>Proofreading</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.9.359/pdf.min.js"></script>
     <style>
-        body { font-family: Arial, sans-serif; margin: 0; display: flex; height: 100vh; }
-        #sidebar { width: 30%; overflow-y: auto; padding: 20px; border-right: 1px solid #ccc; box-sizing: border-box; }
-        #main-content { flex: 1; display: flex; flex-direction: column; padding: 20px; box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; margin: 20px; }
         ul { list-style-type: none; padding: 0; }
         li { margin: 5px 0; }
         a { color: #007bff; text-decoration: none; cursor: pointer; }
         a:hover { text-decoration: underline; }
         .folder-section { margin-bottom: 20px; }
         .file-list { display: none; margin-left: 20px; }
-        textarea {
+        pre, textarea {
             width: 100%;
-            height: 300px;
+            max-height: 400px;
             overflow-y: auto;
             border: 1px solid #ccc;
             padding: 10px;
@@ -175,34 +172,53 @@
             cursor: pointer;
             border-radius: 4px;
         }
-        iframe {
-            flex: 1;
+        #pdf-viewer {
+            margin-top: 10px;
+            text-align: center;
+        }
+        #pdf-canvas {
             border: 1px solid #ccc;
-            margin-top: 20px;
+            max-width: 100%;
+        }
+        #pdf-controls {
+            margin-top: 10px;
+        }
+        .container {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+        .editor-section, .pdf-section {
+            flex: 1;
+            min-width: 300px;
+        }
+        .info-message {
+            font-style: italic;
+            color: #555;
+            margin-bottom: 20px;
         }
     </style>
 </head>
 <body>
-    <div id="sidebar">
-        <h1>Proofreading Folders</h1>
-        <p>Select a folder to view its Markdown and PDF files. Click a file to see and edit content alongside the original PDF.</p>
-        <div id="folder-list"></div>
-    </div>
-    <div id="main-content">
-        <div id="file-content"></div>
-        <iframe id="pdf-viewer" width="100%" height="100%" style="display: none;"></iframe>
-    </div>
+    <h1>Proofreading Folders</h1>
+    <p>Select a folder to view its Markdown and PDF files. Click a file to see its content.</p>
+    <p class="info-message">Click a Markdown file to edit its content and view a related PDF for reference. Use "Request Changes" to submit edits to GitHub. Alternatively, click a PDF file to view it independently.</p>
+    <div id="folder-list"></div>
+    <div id="file-content"></div>
 
     <script>
-        const repoOwner = 'KarthikeyaTirlangi';  // Your GitHub username
-        const repoName = 'TrailOCR';            // Your repository name
+        const repoOwner = 'KarthikeyaTirlangi';
+        const repoName = 'TrailOCR';
         const branch = 'main';
 
         const folderList = document.getElementById('folder-list');
         const fileContent = document.getElementById('file-content');
-        const pdfViewer = document.getElementById('pdf-viewer');
         let currentFilePath = '';
         let originalContent = '';
+        let pdfDoc = null;
+        let currentPage = 1;
+        let totalPages = 0;
+        let pdfFilesInFolder = [];
 
         fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents?ref=${branch}`)
             .then(response => response.json())
@@ -228,49 +244,81 @@
                         section.appendChild(ul);
                         folderList.appendChild(section);
 
-                        loadFolderContent(item.path, ul);
+                        loadFiles(item.path, ul);
                     }
                 });
             })
             .catch(error => console.error('Error fetching folders:', error));
 
-        function loadFolderContent(folderPath, ul) {
+        function loadFiles(folderPath, ul) {
             fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/contents/${folderPath}?ref=${branch}`)
                 .then(response => response.json())
                 .then(data => {
-                    const mdFile = data.find(f => f.name.endsWith('.md'));
-                    const pdfFile = data.find(f => f.name.endsWith('.pdf'));
+                    pdfFilesInFolder = [];
+                    data.forEach(file => {
+                        if (file.type === 'file' && (file.name.endsWith('.md') || file.name.endsWith('.pdf'))) {
+                            const li = document.createElement('li');
+                            const a = document.createElement('a');
+                            a.textContent = file.name;
+                            a.onclick = () => {
+                                if (file.name.endsWith('.md')) {
+                                    loadMarkdownFile(file.path, folderPath);
+                                } else if (file.name.endsWith('.pdf')) {
+                                    loadPDFFile(file.path);
+                                }
+                            };
+                            li.appendChild(a);
+                            ul.appendChild(li);
 
-                    if (mdFile && pdfFile) {
-                        const li = document.createElement('li');
-                        const a = document.createElement('a');
-                        a.textContent = mdFile.name + ' + ' + pdfFile.name;
-                        a.onclick = () => loadPair(folderPath, mdFile.name, pdfFile.name);
-                        li.appendChild(a);
-                        ul.appendChild(li);
-                    }
+                            if (file.name.endsWith('.pdf')) {
+                                pdfFilesInFolder.push({ name: file.name, path: file.path });
+                            }
+                        }
+                    });
                 })
-                .catch(error => console.error(`Error loading folder content from ${folderPath}:`, error));
+                .catch(error => console.error(`Error fetching files in ${folderPath}:`, error));
         }
 
-        function loadPair(folderPath, mdFileName, pdfFileName) {
-            const mdPath = `${folderPath}/${mdFileName}`;
-            const pdfPath = `${folderPath}/${pdfFileName}`;
-            const rawMdUrl = `https://raw.githubusercontent.com/${repoOwner}/${repoName}/${branch}/${mdPath}`;
-            const pdfUrl = `https://raw.githubusercontent.com/${repoOwner}/${repoName}/${branch}/${pdfPath}`;
-
-            // Load markdown
-            fetch(rawMdUrl)
+        function loadMarkdownFile(path, folderPath) {
+            const rawUrl = `https://raw.githubusercontent.com/${repoOwner}/${repoName}/${branch}/${path}`;
+            fetch(rawUrl)
                 .then(response => response.text())
                 .then(text => {
                     originalContent = text;
-                    currentFilePath = mdPath;
+                    currentFilePath = path;
+
+                    let pdfSection = '';
+                    if (pdfFilesInFolder.length > 0) {
+                        pdfSection = `
+                            <div class="pdf-section">
+                                <h3>Reference PDF</h3>
+                                <select id="pdf-selector">
+                                    ${pdfFilesInFolder.map(file => `<option value="${file.path}">${file.name}</option>`).join('')}
+                                </select>
+                                <div id="pdf-viewer">
+                                    <canvas id="pdf-canvas"></canvas>
+                                    <div id="pdf-controls">
+                                        <button id="prev-page" disabled>Previous</button>
+                                        <span id="page-info">Page 1 of 1</span>
+                                        <button id="next-page" disabled>Next</button>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    } else {
+                        pdfSection = `<div class="pdf-section"><p>No PDFs available in this folder for reference.</p></div>`;
+                    }
 
                     fileContent.innerHTML = `
-                        <h3>${mdFileName}</h3>
-                        <textarea id="editor">${text}</textarea>
-                        <br>
-                        <button id="requestChangesBtn" disabled>Request Changes</button>
+                        <div class="container">
+                            <div class="editor-section">
+                                <h3>${path}</h3>
+                                <textarea id="editor" rows="20">${text}</textarea>
+                                <br>
+                                <button id="requestChangesBtn" disabled>Request Changes</button>
+                            </div>
+                            ${pdfSection}
+                        </div>
                     `;
 
                     const editor = document.getElementById('editor');
@@ -283,17 +331,98 @@
                     btn.onclick = () => {
                         const editUrl = `https://github.com/${repoOwner}/${repoName}/edit/${branch}/${currentFilePath}`;
                         window.open(editUrl, '_blank');
-                    };
+                    });
+
+                    if (pdfFilesInFolder.length > 0) {
+                        const pdfSelector = document.getElementById('pdf-selector');
+                        pdfSelector.addEventListener('change', () => {
+                            loadPDF(pdfSelector.value);
+                        });
+                        loadPDF(pdfFilesInFolder[0].path);
+                    }
                 })
                 .catch(error => {
-                    fileContent.innerHTML = `<p>Error loading Markdown: ${error.message}</p>`;
+                    fileContent.innerHTML = `<p>Error loading file: ${error.message}</p>`;
                 });
+        }
 
-            // Load PDF
-            pdfViewer.src = pdfUrl;
-            pdfViewer.style.display = 'block';
+        function loadPDFFile(path) {
+            const pdfUrl = `https://raw.githubusercontent.com/${repoOwner}/${repoName}/${branch}/${path}`;
+            fileContent.innerHTML = `
+                <h3>${path}</h3>
+                <div id="pdf-viewer">
+                    <canvas id="pdf-canvas"></canvas>
+                    <div id="pdf-controls">
+                        <button id="prev-page" disabled>Previous</button>
+                        <span id="page-info">Page 1 of 1</span>
+                        <button id="next-page" disabled>Next</button>
+                    </div>
+                </div>
+            `;
+            loadPDF(pdfUrl);
+        }
+
+        function loadPDF(pdfUrl) {
+            const loadingTask = pdfjsLib.getDocument(pdfUrl);
+            loadingTask.promise.then(pdf => {
+                pdfDoc = pdf;
+                totalPages = pdf.numPages;
+                currentPage = 1;
+
+                const pageInfo = document.getElementById('page-info');
+                pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
+
+                const prevBtn = document.getElementById('prev-page');
+                const nextBtn = document.getElementById('next-page');
+                prevBtn.disabled = currentPage === 1;
+                nextBtn.disabled = currentPage === totalPages;
+
+                prevBtn.onclick = () => {
+                    if (currentPage > 1) {
+                        currentPage--;
+                        renderPDFPage();
+                    }
+                };
+                nextBtn.onclick = () => {
+                    if (currentPage < totalPages) {
+                        currentPage++;
+                        renderPDFPage();
+                    }
+                };
+
+                renderPDFPage();
+            }).catch(error => {
+                const pdfViewer = document.getElementById('pdf-viewer');
+                if (pdfViewer) {
+                    pdfViewer.innerHTML = `<p>Error loading PDF: ${error.message}</p>`;
+                }
+            });
+        }
+
+        function renderPDFPage() {
+            pdfDoc.getPage(currentPage).then(page => {
+                const canvas = document.getElementById('pdf-canvas');
+                const context = canvas.getContext('2d');
+                const viewport = page.getViewport({ scale: 1.0 });
+
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+
+                const renderContext = {
+                    canvasContext: context,
+                    viewport: viewport
+                };
+                page.render(renderContext);
+
+                const pageInfo = document.getElementById('page-info');
+                pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
+
+                const prevBtn = document.getElementById('prev-page');
+                const nextBtn = document.getElementById('next-page');
+                prevBtn.disabled = currentPage === 1;
+                nextBtn.disabled = currentPage === totalPages;
+            });
         }
     </script>
 </body>
 </html>
- -->
